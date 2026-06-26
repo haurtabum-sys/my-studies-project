@@ -1,6 +1,6 @@
 --[[
     WARNING: Heads up! This script has not been verified by ScriptBlox. Use at your own risk!
-    (UI Version - Bản Fix Cuối Cùng: Xuyên thấu lớp bảo vệ của quái + Max FPS)
+    (UI Version - Bản Chống Tràn UI + Fix Diệt Quái Enemys)
 ]]
 
 local Players = game:GetService("Players")
@@ -47,7 +47,7 @@ if queue_on_teleport then
     queue_on_teleport(TeleportCode)
 end
 
--- ==================== CHỨC NĂNG INSTANT KILL (TÌM XUYÊN LỚP & GIỮ FPS) ====================
+-- ==================== CHỨC NĂNG INSTANT KILL (NHẮM VÀO ENEMYS) ====================
 local function StartInstantKill(state)
     _G.InstantKill = state
     SaveState(state)
@@ -56,8 +56,7 @@ local function StartInstantKill(state)
         task.spawn(function()
             local player = Players.LocalPlayer
             while _G.InstantKill do
-                
-                -- 1. Tiêu diệt người chơi khác
+                -- 1. Diệt người chơi khác
                 for _, otherPlayer in pairs(Players:GetPlayers()) do
                     if otherPlayer ~= player and otherPlayer.Character then
                         local hum = otherPlayer.Character:FindFirstChild("Humanoid")
@@ -67,18 +66,16 @@ local function StartInstantKill(state)
                     end
                 end
 
-                -- 2. Quét SÂU vào trong thư mục "Enemys" để móc Humanoid ra diệt
-                local enemysFolder = game:GetService("Workspace"):FindFirstChild("Enemys")
-                if enemysFolder then
-                    -- Dùng GetDescendants chỉ cho thư mục Enemys (cực kỳ nhẹ, không gây lag)
-                    for _, obj in pairs(enemysFolder:GetDescendants()) do
+                -- 2. Diệt quái trong thư mục Enemys (Tìm Humanoid ở mọi lớp bên trong)
+                local folder = game:GetService("Workspace"):FindFirstChild("Enemys")
+                if folder then
+                    for _, obj in pairs(folder:GetDescendants()) do
                         if obj:IsA("Humanoid") and obj.Health > 0 then
                             obj.Health = 0
                         end
                     end
                 end
-                
-                task.wait(0.05) -- Tốc độ diệt cực nhanh
+                task.wait(0.1) -- Tốc độ diệt ổn định
             end
         end)
     end
@@ -88,6 +85,13 @@ end
 local FluxLib = { Theme = { Primary = Settings.ThemeColor, Secondary = Color3.fromRGB(30, 30, 30), Background = Color3.fromRGB(20, 20, 20), Text = Color3.fromRGB(255, 255, 255) }, Tabs = {}, Gui = nil }
 
 function FluxLib:CreateWindow(title)
+    -- CHỐNG TRÀN UI: Xóa mọi UI cũ có cùng tên trước khi tạo mới
+    for _, old in pairs(PlayerGui:GetChildren()) do
+        if old.Name == "FluxHubLite" then
+            old:Destroy()
+        end
+    end
+
     local screenGui = Instance.new("ScreenGui", PlayerGui)
     screenGui.Name = "FluxHubLite"
     screenGui.ResetOnSpawn = false
@@ -187,12 +191,12 @@ end
 
 -- ==================== KHỞI TẠO UI ====================
 local function CreateUI()
-    if FluxLib.Gui then FluxLib.Gui.ScreenGui:Destroy() end
     local Window = FluxLib:CreateWindow("🔥 Instant Kill Hub")
     
-    FluxLib:CreateToggle("Bật Instant Kill (Fix lỗi giấu máu)", SavedToggleState, function(v) 
+    FluxLib:CreateToggle("Bật Instant Kill (Anti-Stack UI)", SavedToggleState, function(v) 
         StartInstantKill(v) 
     end)
 end
 
+-- Đảm bảo chỉ chạy 1 UI duy nhất
 CreateUI()
