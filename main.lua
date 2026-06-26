@@ -1,6 +1,6 @@
 --[[
     WARNING: Heads up! This script has not been verified by ScriptBlox. Use at your own risk!
-    (UI Version - Bản Sửa Lỗi: Fix Instant Kill + Giữ FPS mượt)
+    (UI Version - Bản Tối Ưu Tuyệt Đối: Target thẳng folder "Enemys" - Max FPS)
 ]]
 
 local Players = game:GetService("Players")
@@ -47,7 +47,7 @@ if queue_on_teleport then
     queue_on_teleport(TeleportCode)
 end
 
--- ==================== CHỨC NĂNG INSTANT KILL (CÂN BẰNG FPS & DIỆT QUÁI) ====================
+-- ==================== CHỨC NĂNG INSTANT KILL (TỐI ƯU MAX FPS) ====================
 local function StartInstantKill(state)
     _G.InstantKill = state
     SaveState(state)
@@ -57,21 +57,29 @@ local function StartInstantKill(state)
             local player = Players.LocalPlayer
             while _G.InstantKill do
                 
-                -- Quét sâu toàn bộ bản đồ để tìm quái ẩn trong các Folder
-                for _, obj in pairs(game:GetService("Workspace"):GetDescendants()) do
-                    -- Nếu người dùng tắt nút giữa chừng thì dừng vòng lặp ngay lập tức
-                    if not _G.InstantKill then break end 
-                    
-                    if obj:IsA("Model") and obj.Name ~= player.Name then
-                        local hum = obj:FindFirstChild("Humanoid")
+                -- 1. Tiêu diệt người chơi khác (Nếu có PvP)
+                for _, otherPlayer in pairs(Players:GetPlayers()) do
+                    if otherPlayer ~= player and otherPlayer.Character then
+                        local hum = otherPlayer.Character:FindFirstChild("Humanoid")
+                        if hum and hum.Health > 0 then
+                            hum.Health = 0
+                        end
+                    end
+                end
+
+                -- 2. Nhắm thẳng vào thư mục "Enemys" để diệt quái (Cực nhẹ máy)
+                local enemysFolder = game:GetService("Workspace"):FindFirstChild("Enemys")
+                if enemysFolder then
+                    for _, mob in pairs(enemysFolder:GetChildren()) do
+                        local hum = mob:FindFirstChild("Humanoid")
                         if hum and hum.Health > 0 then
                             hum.Health = 0
                         end
                     end
                 end
                 
-                -- Nghỉ 0.5 giây trước khi quét lại (Giúp giảm tải cho CPU, cứu FPS của bạn)
-                task.wait(0.5) 
+                -- Trả tốc độ quét về cực nhanh vì code giờ rất nhẹ
+                task.wait(0.05) 
             end
         end)
     end
@@ -183,7 +191,7 @@ local function CreateUI()
     if FluxLib.Gui then FluxLib.Gui.ScreenGui:Destroy() end
     local Window = FluxLib:CreateWindow("🔥 Instant Kill Hub")
     
-    FluxLib:CreateToggle("Bật / Tắt Instant Kill (All Map)", SavedToggleState, function(v) 
+    FluxLib:CreateToggle("Bật Instant Kill (Tối Ưu)", SavedToggleState, function(v) 
         StartInstantKill(v) 
     end)
 end
