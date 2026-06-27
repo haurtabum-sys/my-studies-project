@@ -1,14 +1,21 @@
 --[[
     WARNING: Heads up! This script has not been verified by ScriptBlox. Use at your own risk!
-    (UI Version - Bản Chống Tràn UI + Fix Diệt Quái Enemys)
+    (UI Version - Bản Fix Cuối: Chờ game load xong mới tạo UI)
 ]]
+
+-- Bắt script phải đợi game tải xong 100% mới được chạy tiếp
+if not game:IsLoaded() then
+    game.Loaded:Wait()
+end
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
-local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+-- Dùng WaitForChild để đảm bảo PlayerGui đã thực sự tồn tại
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui", 10)
 
 local Settings = {
     ThemeColor = Color3.fromRGB(138, 43, 226),
@@ -41,7 +48,9 @@ local SavedToggleState = LoadState()
 local queue_on_teleport = queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport)
 if queue_on_teleport then
     local TeleportCode = [[
-        task.wait(2)
+        -- Thêm lệnh chờ load vào cả code teleport cho chắc chắn
+        if not game:IsLoaded() then game.Loaded:Wait() end
+        task.wait(3) -- Cho game nghỉ thêm 3 giây trước khi gọi script từ GitHub
         loadstring(game:HttpGet("https://raw.githubusercontent.com/haurtabum-sys/my-studies-project/refs/heads/main/main.lua"))()
     ]]
     queue_on_teleport(TeleportCode)
@@ -56,7 +65,6 @@ local function StartInstantKill(state)
         task.spawn(function()
             local player = Players.LocalPlayer
             while _G.InstantKill do
-                -- 1. Diệt người chơi khác
                 for _, otherPlayer in pairs(Players:GetPlayers()) do
                     if otherPlayer ~= player and otherPlayer.Character then
                         local hum = otherPlayer.Character:FindFirstChild("Humanoid")
@@ -66,7 +74,6 @@ local function StartInstantKill(state)
                     end
                 end
 
-                -- 2. Diệt quái trong thư mục Enemys (Tìm Humanoid ở mọi lớp bên trong)
                 local folder = game:GetService("Workspace"):FindFirstChild("Enemys")
                 if folder then
                     for _, obj in pairs(folder:GetDescendants()) do
@@ -75,7 +82,7 @@ local function StartInstantKill(state)
                         end
                     end
                 end
-                task.wait(0.1) -- Tốc độ diệt ổn định
+                task.wait(0.1) 
             end
         end)
     end
@@ -85,7 +92,8 @@ end
 local FluxLib = { Theme = { Primary = Settings.ThemeColor, Secondary = Color3.fromRGB(30, 30, 30), Background = Color3.fromRGB(20, 20, 20), Text = Color3.fromRGB(255, 255, 255) }, Tabs = {}, Gui = nil }
 
 function FluxLib:CreateWindow(title)
-    -- CHỐNG TRÀN UI: Xóa mọi UI cũ có cùng tên trước khi tạo mới
+    if not PlayerGui then return end -- Nếu lỗi không tìm thấy PlayerGui thì dừng
+
     for _, old in pairs(PlayerGui:GetChildren()) do
         if old.Name == "FluxHubLite" then
             old:Destroy()
@@ -154,6 +162,8 @@ function FluxLib:CreateWindow(title)
 end
 
 function FluxLib:CreateToggle(name, default, callback)
+    if not self.Gui then return end
+
     local frame = Instance.new("Frame", self.Gui.ContentContainer)
     frame.Size = UDim2.new(1, 0, 0, 45)
     frame.BackgroundColor3 = self.Theme.Secondary
@@ -192,11 +202,11 @@ end
 -- ==================== KHỞI TẠO UI ====================
 local function CreateUI()
     local Window = FluxLib:CreateWindow("🔥 Instant Kill Hub")
-    
-    FluxLib:CreateToggle("Bật Instant Kill (Anti-Stack UI)", SavedToggleState, function(v) 
-        StartInstantKill(v) 
-    end)
+    if Window then
+        FluxLib:CreateToggle("Bật Instant Kill (Auto-Load UI)", SavedToggleState, function(v) 
+            StartInstantKill(v) 
+        end)
+    end
 end
 
--- Đảm bảo chỉ chạy 1 UI duy nhất
 CreateUI()
