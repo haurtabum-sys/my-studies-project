@@ -1,6 +1,6 @@
 --[[
     WARNING: Heads up! This script has not been verified by ScriptBlox. Use at your own risk!
-    (UI Version - Bản Tối Thượng: Thêm Force Kill Boss, Fix Slider, Quét NPCS)
+    (UI Version - Bản Tối Thượng VIP: Thêm Auto Shiftlock)
 ]]
 
 if not game:IsLoaded() then
@@ -11,6 +11,8 @@ local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local HttpService = game:GetService("HttpService")
+local VirtualUser = game:GetService("VirtualUser")
+local VirtualInputManager = game:GetService("VirtualInputManager") 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui", 10)
 
@@ -20,13 +22,32 @@ local Settings = {
 }
 
 _G.InstantKill = false
-_G.KillDistance = 1000 -- 1000 = Toàn Map
+_G.AutoAttack = false
+_G.AutoTeleport = false
+_G.AutoSkill = false
+_G.AutoTransform = false
+_G.AutoShiftlock = false
+_G.KillDistance = 1000 
+
+-- ==================== HỆ THỐNG GIẢ LẬP BẤM PHÍM ====================
+local function PressKey(keyCode)
+    pcall(function()
+        VirtualInputManager:SendKeyEvent(true, keyCode, false, game)
+        task.wait(0.02)
+        VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
+    end)
+end
 
 -- ==================== HỆ THỐNG LƯU/TẢI TRẠNG THÁI ====================
 local function SaveState()
     if writefile then
         local data = { 
             InstantKillActive = _G.InstantKill,
+            AutoAttackActive = _G.AutoAttack,
+            AutoTeleportActive = _G.AutoTeleport,
+            AutoSkillActive = _G.AutoSkill,
+            AutoTransformActive = _G.AutoTransform,
+            AutoShiftlockActive = _G.AutoShiftlock,
             KillDistance = _G.KillDistance
         }
         writefile(Settings.ConfigFile, HttpService:JSONEncode(data))
@@ -40,6 +61,11 @@ local function LoadState()
         end)
         if success and type(data) == "table" then
             _G.InstantKill = data.InstantKillActive or false
+            _G.AutoAttack = data.AutoAttackActive or false
+            _G.AutoTeleport = data.AutoTeleportActive or false
+            _G.AutoSkill = data.AutoSkillActive or false
+            _G.AutoTransform = data.AutoTransformActive or false
+            _G.AutoShiftlock = data.AutoShiftlockActive or false
             _G.KillDistance = tonumber(data.KillDistance) or 1000
             return
         end
@@ -59,16 +85,12 @@ if queue_on_teleport then
     queue_on_teleport(TeleportCode)
 end
 
--- ==================== HÀM ÉP TỬ (TRỊ BOSS LÌ LỢM) ====================
+-- ==================== HÀM HỖ TRỢ CHUNG ====================
 local function ForceKill(hum)
     if hum and hum.Health > 0 then
         pcall(function()
-            -- Cách 1: Set máu trực tiếp
             hum.Health = 0
-            -- Cách 2: Gây sát thương chuẩn phòng hờ
             hum:TakeDamage(999999999)
-            
-            -- Cách 3: Phá vỡ hệ thống máu riêng (nếu có)
             local char = hum.Parent
             if char then
                 char:SetAttribute("Health", 0)
@@ -91,7 +113,38 @@ local function getTargetPosition(obj)
     return nil
 end
 
--- ==================== CHỨC NĂNG INSTANT KILL ====================
+local function GetClosestTarget()
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return nil end
+
+    local closestDist = math.huge
+    local closestPos = nil
+
+    local foldersToScan = {"Enemys", "NPCS"}
+    for _, folderName in ipairs(foldersToScan) do
+        local folder = game:GetService("Workspace"):FindFirstChild(folderName)
+        if folder then
+            for _, obj in pairs(folder:GetDescendants()) do
+                if obj:IsA("Humanoid") and obj.Health > 0 then
+                    if not obj:IsDescendantOf(char) then
+                        local tPos = getTargetPosition(obj)
+                        if tPos then
+                            local dist = (root.Position - tPos).Magnitude
+                            if dist < closestDist then
+                                closestDist = dist
+                                closestPos = tPos
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return closestPos
+end
+
+-- ==================== CÁC VÒNG LẶP CHỨC NĂNG ====================
 local function StartInstantKill(state)
     _G.InstantKill = state
     SaveState()
@@ -104,7 +157,6 @@ local function StartInstantKill(state)
                 local root = char and char:FindFirstChild("HumanoidRootPart")
                 local playerPos = root and root.Position
 
-                -- 1. Giết người chơi khác
                 for _, otherPlayer in pairs(Players:GetPlayers()) do
                     if otherPlayer ~= player and otherPlayer.Character then
                         local hum = otherPlayer.Character:FindFirstChild("Humanoid")
@@ -119,14 +171,12 @@ local function StartInstantKill(state)
                     end
                 end
 
-                -- 2. Giết quái trong mục Enemys và cả NPCS
                 local foldersToScan = {"Enemys", "NPCS"}
                 for _, folderName in ipairs(foldersToScan) do
                     local folder = game:GetService("Workspace"):FindFirstChild(folderName)
                     if folder then
                         for _, obj in pairs(folder:GetDescendants()) do
                             if obj:IsA("Humanoid") and obj.Health > 0 then
-                                -- Đảm bảo không tự giết nhầm NPC thân thiện nếu nó thuộc về LocalPlayer
                                 if not char or not obj:IsDescendantOf(char) then
                                     if _G.KillDistance >= 1000 then
                                         ForceKill(obj)
@@ -141,14 +191,116 @@ local function StartInstantKill(state)
                         end
                     end
                 end
-                
                 task.wait(0.05) 
             end
         end)
     end
 end
 
--- ==================== THƯ VIỆN UI (CHỐNG TRÀN CHỮ SLIDER) ====================
+local function StartAutoAttack(state)
+    _G.AutoAttack = state
+    SaveState()
+    
+    if state then
+        task.spawn(function()
+            while _G.AutoAttack do
+                VirtualUser:CaptureController()
+                VirtualUser:ClickButton1(Vector2.new())
+                
+                local char = Players.LocalPlayer.Character
+                if char then
+                    local equippedTool = char:FindFirstChildOfClass("Tool")
+                    if equippedTool then
+                        equippedTool:Activate()
+                    end
+                end
+                task.wait(0.05)
+            end
+        end)
+    end
+end
+
+local function StartAutoTeleport(state)
+    _G.AutoTeleport = state
+    SaveState()
+    
+    if state then
+        task.spawn(function()
+            while _G.AutoTeleport do
+                local char = Players.LocalPlayer.Character
+                local root = char and char:FindFirstChild("HumanoidRootPart")
+                
+                if root then
+                    local targetPos = GetClosestTarget()
+                    if targetPos then
+                        root.CFrame = CFrame.new(targetPos + Vector3.new(0, 4, 0), targetPos)
+                    end
+                end
+                task.wait(0.1)
+            end
+        end)
+    end
+end
+
+local function StartAutoSkill(state)
+    _G.AutoSkill = state
+    SaveState()
+    
+    if state then
+        task.spawn(function()
+            local skillKeys = {Enum.KeyCode.Z, Enum.KeyCode.X, Enum.KeyCode.C, Enum.KeyCode.V}
+            while _G.AutoSkill do
+                for _, key in ipairs(skillKeys) do
+                    if not _G.AutoSkill then break end
+                    PressKey(key)
+                    task.wait(0.15) 
+                end
+                task.wait(0.1)
+            end
+        end)
+    end
+end
+
+local function StartAutoTransform(state)
+    _G.AutoTransform = state
+    SaveState()
+    
+    if state then
+        task.spawn(function()
+            while _G.AutoTransform do
+                PressKey(Enum.KeyCode.T)
+                task.wait(1.5) 
+            end
+        end)
+    end
+end
+
+local function StartAutoShiftlock(state)
+    _G.AutoShiftlock = state
+    SaveState()
+    
+    if state then
+        task.spawn(function()
+            while _G.AutoShiftlock do
+                -- Liên tục khóa chuột vào giữa màn hình
+                pcall(function()
+                    UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+                end)
+                task.wait(0.05)
+            end
+            -- Trả lại chuột bình thường khi tắt
+            pcall(function()
+                UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+            end)
+        end)
+    else
+        pcall(function()
+            UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+        end)
+    end
+end
+
+-- ==================== THƯ VIỆN UI ====================
 local FluxLib = { Theme = { Primary = Settings.ThemeColor, Secondary = Color3.fromRGB(30, 30, 30), Background = Color3.fromRGB(20, 20, 20), Text = Color3.fromRGB(255, 255, 255) }, Tabs = {}, Gui = nil }
 
 function FluxLib:CreateWindow(title)
@@ -163,8 +315,8 @@ function FluxLib:CreateWindow(title)
     screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     
     local mainFrame = Instance.new("Frame", screenGui)
-    mainFrame.Size = UDim2.new(0, 400, 0, 280)
-    mainFrame.Position = UDim2.new(0.5, -200, 0.5, -140)
+    mainFrame.Size = UDim2.new(0, 400, 0, 530) -- Tăng size để chứa nút Shiftlock
+    mainFrame.Position = UDim2.new(0.5, -200, 0.5, -265)
     mainFrame.BackgroundColor3 = self.Theme.Background
     mainFrame.BorderSizePixel = 0
     mainFrame.Active = true
@@ -202,6 +354,12 @@ function FluxLib:CreateWindow(title)
         screenGui:Destroy() 
         self.Gui = nil 
         _G.InstantKill = false 
+        _G.AutoAttack = false
+        _G.AutoTeleport = false
+        _G.AutoSkill = false
+        _G.AutoTransform = false
+        _G.AutoShiftlock = false
+        StartAutoShiftlock(false) -- Đảm bảo nhả chuột khi tắt UI
         SaveState()
     end)
     
@@ -274,7 +432,7 @@ function FluxLib:CreateSlider(name, min, max, default, callback)
 
     local valueLabel = Instance.new("TextLabel", frame)
     valueLabel.Size = UDim2.new(0.3, 0, 0, 25)
-    valueLabel.Position = UDim2.new(1, -120, 0, 4) -- Dời số sang trái một chút để dễ nhìn
+    valueLabel.Position = UDim2.new(1, -120, 0, 4) 
     valueLabel.BackgroundTransparency = 1
     valueLabel.Text = (default >= max) and "Toàn map" or tostring(math.floor(default))
     valueLabel.TextColor3 = self.Theme.Primary
@@ -348,14 +506,39 @@ local function CreateUI()
             StartInstantKill(v) 
         end)
         
+        FluxLib:CreateToggle("Bật / Tắt Auto Attack", _G.AutoAttack, function(v) 
+            StartAutoAttack(v) 
+        end)
+        
+        FluxLib:CreateToggle("Bật / Tắt Tự Động Bay Lại Boss", _G.AutoTeleport, function(v) 
+            StartAutoTeleport(v) 
+        end)
+
+        FluxLib:CreateToggle("Bật / Tắt Auto Skill (Z, X, C, V)", _G.AutoSkill, function(v) 
+            StartAutoSkill(v) 
+        end)
+
+        FluxLib:CreateToggle("Bật / Tắt Auto Biến Hình (T)", _G.AutoTransform, function(v) 
+            StartAutoTransform(v) 
+        end)
+        
+        -- THÀNH PHẦN MỚI: AUTO SHIFTLOCK
+        FluxLib:CreateToggle("Bật / Tắt Auto Shiftlock", _G.AutoShiftlock, function(v) 
+            StartAutoShiftlock(v) 
+        end)
+        
         FluxLib:CreateSlider("Khoảng cách diệt quái", 0, 1000, _G.KillDistance, function(value)
             _G.KillDistance = value
             SaveState()
         end)
         
-        if _G.InstantKill then
-            StartInstantKill(true)
-        end
+        -- Kích hoạt lại các trạng thái cũ nếu lưu là ON
+        if _G.InstantKill then StartInstantKill(true) end
+        if _G.AutoAttack then StartAutoAttack(true) end
+        if _G.AutoTeleport then StartAutoTeleport(true) end
+        if _G.AutoSkill then StartAutoSkill(true) end
+        if _G.AutoTransform then StartAutoTransform(true) end
+        if _G.AutoShiftlock then StartAutoShiftlock(true) end
     end
 end
 
