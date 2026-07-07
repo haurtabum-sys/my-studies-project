@@ -1,6 +1,6 @@
 --[[
     WARNING: Heads up! This script has not been verified by ScriptBlox. Use at your own risk!
-    (UI Version - Bản Tối Thượng VIP: Thêm Auto Shiftlock)
+    (UI Version - Bản Tối Thượng VIP: Bẻ khóa Camera bằng Hardware Keypress)
 ]]
 
 if not game:IsLoaded() then
@@ -11,6 +11,7 @@ local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
 local VirtualUser = game:GetService("VirtualUser")
 local VirtualInputManager = game:GetService("VirtualInputManager") 
 local LocalPlayer = Players.LocalPlayer
@@ -27,14 +28,33 @@ _G.AutoTeleport = false
 _G.AutoSkill = false
 _G.AutoTransform = false
 _G.AutoShiftlock = false
+_G.Noclip = false
 _G.KillDistance = 1000 
 
 -- ==================== HỆ THỐNG GIẢ LẬP BẤM PHÍM ====================
+-- Hàm này dành cho Skill (Z,X,C,V,T) vì game nhận phím ảo bình thường
 local function PressKey(keyCode)
     pcall(function()
         VirtualInputManager:SendKeyEvent(true, keyCode, false, game)
-        task.wait(0.02)
+        task.wait(0.05)
         VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
+    end)
+end
+
+-- Hàm ĐẶC BIỆT dành riêng cho Shiftlock (Dùng phần cứng để ép Roblox phải nhận)
+local function ToggleNativeShiftlock()
+    pcall(function()
+        if keypress and keyrelease then
+            -- 0xA1 là mã Hex của phím Right Shift trên bàn phím vật lý
+            keypress(0xA1) 
+            task.wait(0.05)
+            keyrelease(0xA1)
+        else
+            -- Backup nếu trình chạy script của bạn không hỗ trợ lệnh keypress
+            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.RightShift, false, game)
+            task.wait(0.05)
+            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.RightShift, false, game)
+        end
     end)
 end
 
@@ -48,6 +68,7 @@ local function SaveState()
             AutoSkillActive = _G.AutoSkill,
             AutoTransformActive = _G.AutoTransform,
             AutoShiftlockActive = _G.AutoShiftlock,
+            NoclipActive = _G.Noclip,
             KillDistance = _G.KillDistance
         }
         writefile(Settings.ConfigFile, HttpService:JSONEncode(data))
@@ -66,6 +87,7 @@ local function LoadState()
             _G.AutoSkill = data.AutoSkillActive or false
             _G.AutoTransform = data.AutoTransformActive or false
             _G.AutoShiftlock = data.AutoShiftlockActive or false
+            _G.Noclip = data.NoclipActive or false
             _G.KillDistance = tonumber(data.KillDistance) or 1000
             return
         end
@@ -278,27 +300,51 @@ end
 local function StartAutoShiftlock(state)
     _G.AutoShiftlock = state
     SaveState()
+    -- Gọi lệnh bấm Hardware
+    ToggleNativeShiftlock()
+end
+
+local NoclipConnection
+local function StartNoclip(state)
+    _G.Noclip = state
+    SaveState()
     
     if state then
-        task.spawn(function()
-            while _G.AutoShiftlock do
-                -- Liên tục khóa chuột vào giữa màn hình
-                pcall(function()
-                    UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
-                end)
-                task.wait(0.05)
-            end
-            -- Trả lại chuột bình thường khi tắt
-            pcall(function()
-                UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+        if not NoclipConnection then
+            NoclipConnection = RunService.Stepped:Connect(function()
+                if _G.Noclip then
+                    local char = Players.LocalPlayer.Character
+                    if char then
+                        for _, part in pairs(char:GetDescendants()) do
+                            if part:IsA("BasePart") and part.CanCollide then
+                                part.CanCollide = false
+                            end
+                        end
+                    end
+                end
             end)
-        end)
+        end
     else
-        pcall(function()
-            UserInputService.MouseBehavior = Enum.MouseBehavior.Default
-        end)
+        if NoclipConnection then
+            NoclipConnection:Disconnect()
+            NoclipConnection = nil
+        end
     end
 end
+
+-- ==================== HỆ THỐNG PHÍM TẮT (HOTKEYS) ====================
+UserInputService.InputBegan:Connect(function(input)
+    if UserInputService:GetFocusedTextBox() then return end 
+
+    if input.KeyCode == Enum.KeyCode.J then
+        if _G.ToggleShiftlockUI then
+            _G.ToggleShiftlockUI(not _G.AutoShiftlock)
+        else
+            _G.AutoShiftlock = not _G.AutoShiftlock
+            StartAutoShiftlock(_G.AutoShiftlock)
+        end
+    end
+end)
 
 -- ==================== THƯ VIỆN UI ====================
 local FluxLib = { Theme = { Primary = Settings.ThemeColor, Secondary = Color3.fromRGB(30, 30, 30), Background = Color3.fromRGB(20, 20, 20), Text = Color3.fromRGB(255, 255, 255) }, Tabs = {}, Gui = nil }
@@ -315,8 +361,8 @@ function FluxLib:CreateWindow(title)
     screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     
     local mainFrame = Instance.new("Frame", screenGui)
-    mainFrame.Size = UDim2.new(0, 400, 0, 530) -- Tăng size để chứa nút Shiftlock
-    mainFrame.Position = UDim2.new(0.5, -200, 0.5, -265)
+    mainFrame.Size = UDim2.new(0, 400, 0, 580)
+    mainFrame.Position = UDim2.new(0.5, -200, 0.5, -290)
     mainFrame.BackgroundColor3 = self.Theme.Background
     mainFrame.BorderSizePixel = 0
     mainFrame.Active = true
@@ -359,7 +405,11 @@ function FluxLib:CreateWindow(title)
         _G.AutoSkill = false
         _G.AutoTransform = false
         _G.AutoShiftlock = false
-        StartAutoShiftlock(false) -- Đảm bảo nhả chuột khi tắt UI
+        _G.Noclip = false
+        _G.ToggleShiftlockUI = nil
+        StartNoclip(false)
+        -- Tắt an toàn
+        if _G.AutoShiftlock then ToggleNativeShiftlock() end
         SaveState()
     end)
     
@@ -403,14 +453,20 @@ function FluxLib:CreateToggle(name, default, callback)
     Instance.new("UICorner", toggle).CornerRadius = UDim.new(0, 6)
     
     local state = default
-    toggle.MouseButton1Click:Connect(function()
-        state = not state
+
+    local function UpdateToggle(newState)
+        state = newState
         toggle.BackgroundColor3 = state and self.Theme.Primary or Color3.fromRGB(50, 50, 50)
         toggle.Text = state and "ON" or "OFF"
         pcall(function() callback(state) end)
+    end
+
+    toggle.MouseButton1Click:Connect(function()
+        UpdateToggle(not state)
     end)
     pcall(function() callback(default) end)
-    return frame
+
+    return { SetState = UpdateToggle }
 end
 
 function FluxLib:CreateSlider(name, min, max, default, callback)
@@ -522,9 +578,15 @@ local function CreateUI()
             StartAutoTransform(v) 
         end)
         
-        -- THÀNH PHẦN MỚI: AUTO SHIFTLOCK
-        FluxLib:CreateToggle("Bật / Tắt Auto Shiftlock", _G.AutoShiftlock, function(v) 
+        local shiftlockBtn = FluxLib:CreateToggle("Bật / Tắt Auto Shiftlock (Phím tắt: J)", _G.AutoShiftlock, function(v) 
             StartAutoShiftlock(v) 
+        end)
+        if shiftlockBtn then
+            _G.ToggleShiftlockUI = shiftlockBtn.SetState
+        end
+        
+        FluxLib:CreateToggle("Bật / Tắt Noclip (Xuyên Tường)", _G.Noclip, function(v) 
+            StartNoclip(v) 
         end)
         
         FluxLib:CreateSlider("Khoảng cách diệt quái", 0, 1000, _G.KillDistance, function(value)
@@ -532,13 +594,12 @@ local function CreateUI()
             SaveState()
         end)
         
-        -- Kích hoạt lại các trạng thái cũ nếu lưu là ON
         if _G.InstantKill then StartInstantKill(true) end
         if _G.AutoAttack then StartAutoAttack(true) end
         if _G.AutoTeleport then StartAutoTeleport(true) end
         if _G.AutoSkill then StartAutoSkill(true) end
         if _G.AutoTransform then StartAutoTransform(true) end
-        if _G.AutoShiftlock then StartAutoShiftlock(true) end
+        if _G.Noclip then StartNoclip(true) end
     end
 end
 
